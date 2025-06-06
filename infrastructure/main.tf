@@ -1,8 +1,8 @@
 terraform {
   required_providers {
     proxmox = {
-      source  = "thegameprofi/proxmox"
-      version = ">= 2.10.0"
+      source  = "telmate/proxmox"
+      version = "3.0.1-rc3"
     }
   }
   required_version = ">= 1.5"
@@ -78,6 +78,7 @@ locals {
 resource "proxmox_vm_qemu" "k8s_node" {
   count = length(local.vmids)      # Crée une VM pour chaque ID dans local.vmids
   vmid  = local.vmids[count.index] # Utilise l'index du count pour assigner le VMID de manière à ce que chaque VM ait un VMID unique situé dans local.vmids
+  #agent = 1
 
   name = (
     count.index == 0 ?          # C'est le master Kubernetes
@@ -93,34 +94,57 @@ resource "proxmox_vm_qemu" "k8s_node" {
   cores  = 2
   memory = 4096
 
+  # lifecycle {
+  #   ignore_changes = [
+  #     # Le champ "disk" englobe tous les disques (ici le scsi0 du template),
+  #     # si vous ne souhaitez jamais que Terraform supprime ou modifie scsi0.
+  #     disk,
+  #   ]
+  # }
+
+  disks {
+    scsi {
+      scsi0 {
+        disk {
+          size     = "22732M"
+          storage  = var.storage_name # Utilise le storage défini dans la variable
+          discard  = true
+          iothread = true
+        }
+      }
+    }
+  }
+
+  # ─── On empêche Terraform de toucher à scsi0 (le disque principal du template)
+  lifecycle {
+    ignore_changes = [
+      disk, # ici “disk” fait référence au disque racine scsi0 présent dans le template
+    ]
+  }
+
+  # ─── On crée le CD-ROM “Cloud-Init” sur le premier IDE libre (terraform le mettra en ide3)
+  cloudinit_cdrom_storage = var.storage_name
+
+  # ─── On indique que la VM boote uniquement sur le disque racine cloné (scsi0)
+  scsihw   = "virtio-scsi-single"
+  bootdisk = "scsi0"
+  boot     = "order=scsi0"
+
   network {
     model  = "virtio"
     bridge = "vmbr0"
   }
 
+
+  # --- Cloud-Init Drive ---
+
+  # cloudinit_cdrom_storage = var.storage_name # crée/idéalement « gryffondor-pool »
+
   ciuser     = "pop"              # Utilisateur Cloud-Init
   cipassword = var.ci_pwd         # Mot de passe pour l'utilisateur Cloud-Init
   sshkeys    = var.ssh_public_key # Clé SSH publique à injecter dans chaque VM
-
-  # Configuration Cloud-Init pour chaque VM
-  cicustom = <<EOF
-#cloud-config
-hostname: ${count.index == 0 ? "k8s-master" : "k8s-worker-${count.index}"}
-ssh_authorized_keys:
-  - ${var.ssh_public_key}
-manage_etc_hosts: true
-network:
-  version: 2
-  ethernets:
-    eth0:
-      dhcp4: false
-      addresses:
-        - ${lookup(local.public_ips, count.index)}/24
-      gateway4: 162.38.112.254
-      nameservers:
-        addresses:
-          - 8.8.8.8
-EOF
+  ipconfig0  = "ip=${lookup(local.public_ips, count.index)}/24,gw=162.38.112.254"
+  nameserver = "8.8.8.8"
 }
 
 output "master_public_ip" {
