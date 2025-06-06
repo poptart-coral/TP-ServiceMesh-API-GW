@@ -1,8 +1,8 @@
 terraform {
   required_providers {
     proxmox = {
-      source  = "Telmate/proxmox"
-      version = "2.9.14"
+      source  = "thegameprofi/proxmox"
+      version = ">= 2.10.0"
     }
   }
   required_version = ">= 1.5"
@@ -61,38 +61,45 @@ locals {
   }
   node_names = ["gryffondor-1", "gryffondor-2", "gryffondor-3", "gryffondor-1"] # Noms des nœuds Proxmox où les VMs seront créées respectivement
   template_ids = [
-    "113", # ID du template pour le master dans Gryffondor-1
-    "11112004", # ID du template pour le premier worker dans Gryffondor-2
-    "11112005", # ID du template pour le deuxième worker dans Gryffondor-3
-    "113" # ID du template pour le troisième worker dans Gryffondor-1
+    "poptart-cloud-init-template",   # ID du template pour le master dans Gryffondor-1
+    "poptart-cloud-init-template-2", # ID du template pour le premier worker dans Gryffondor-2
+    "poptart-cloud-init-template-3", # ID du template pour le deuxième worker dans Gryffondor-3
+    "poptart-cloud-init-template"    # ID du template pour le troisième worker dans Gryffondor-1
   ]
+
+  # template_ids = [
+  #   "113", # ID du template pour le master dans Gryffondor-1
+  #   "11112004", # ID du template pour le premier worker dans Gryffondor-2
+  #   "11112005", # ID du template pour le deuxième worker dans Gryffondor-3
+  #   "113" # ID du template pour le troisième worker dans Gryffondor-1
+  # ]
 }
 
 resource "proxmox_vm_qemu" "k8s_node" {
-  count = length(local.vmids) # Crée une VM pour chaque ID dans local.vmids
+  count = length(local.vmids)      # Crée une VM pour chaque ID dans local.vmids
   vmid  = local.vmids[count.index] # Utilise l'index du count pour assigner le VMID de manière à ce que chaque VM ait un VMID unique situé dans local.vmids
 
   name = (
-    count.index == 0 ? # C'est le master Kubernetes
-    "k8s-master" : # Dans ce cas, le nom de la VM sera "k8s-master"
+    count.index == 0 ?          # C'est le master Kubernetes
+    "k8s-master" :              # Dans ce cas, le nom de la VM sera "k8s-master"
     "k8s-worker-${count.index}" # Sinon, c'est un worker, donc le nom sera "k8s-worker-1", "k8s-worker-2", etc.
   )
 
-  target_node = local.node_names[count.index] # Utilise le nom du nœud Proxmox correspondant à l'index de la VM
+  target_node = local.node_names[count.index]   # Utilise le nom du nœud Proxmox correspondant à l'index de la VM
   clone       = local.template_ids[count.index] # Clone le template correspondant à l'index de la VM
-  full_clone  = true # Utilise un clone complet pour chaque VM
-  os_type     = "cloud-init" # Type d'OS pour les VMs, ici c'est Cloud-Init
+  full_clone  = true                            # Utilise un clone complet pour chaque VM
+  os_type     = "cloud-init"                    # Type d'OS pour les VMs, ici c'est Cloud-Init
 
   cores  = 2
   memory = 4096
 
   network {
-    model  = "virtio" 
+    model  = "virtio"
     bridge = "vmbr0"
   }
 
-  ciuser     = "pop" # Utilisateur Cloud-Init
-  cipassword = var.ci_pwd # Mot de passe pour l'utilisateur Cloud-Init
+  ciuser     = "pop"              # Utilisateur Cloud-Init
+  cipassword = var.ci_pwd         # Mot de passe pour l'utilisateur Cloud-Init
   sshkeys    = var.ssh_public_key # Clé SSH publique à injecter dans chaque VM
 
   # Configuration Cloud-Init pour chaque VM
@@ -116,7 +123,7 @@ network:
 EOF
 }
 
-output "master_public_ip" { 
+output "master_public_ip" {
   description = "IP publique du master Kubernetes"
   value       = lookup(local.public_ips, 0) # IP publique du master
 }
