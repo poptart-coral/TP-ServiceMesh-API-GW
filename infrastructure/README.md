@@ -1,122 +1,111 @@
 # Déploiement de l'infrastructure Kubernetes avec Terraform
 
-Ce document décrit la mise en place de l'infrastructure du projet à l’aide de Terraform sur le cluster Proxmox Gryffondor.
+Ce guide décrit pas à pas comment déployer un cluster Kubernetes Talos sur un cluster Proxmox **Gryffondor** à l’aide de Terraform.
+
 
 ## Structure du projet
+
 ```bash
 .
-├── main.tf
-└── terraform.tfvars        
+├── README.md                       
+└── infrastructure
+    ├── README.md                    # Guide pour déployer l'infrastructure (cluster Kube dans Proxmox)
+    ├── id_ed25519.pub               # Votre clé SSH publique (à ajouter vous-même)
+    ├── main.tf                      # Point d’entrée Terraform, module Popoter
+    ├── provider.tf                  # Déclaration des providers Terraform (Proxmox, Talos)
+    ├── variables.tf                 # Variables globales (proxmox, nodes, cluster)
+    ├── proxmox.auto.tfvars          # Valeurs sensibles pour Proxmox (en local, non commit)
+    ├── output.tf                    # Outputs globaux vers `infrastructure/output/`
+    ├── Popoter                      # Module Terraform principal
+    │   ├── image.tf                 # Téléchargement du template Talos
+    │   ├── virtual-machines.tf      # Définition des VMs Proxmox
+    │   ├── talos.tf                 # Ressources Talos (bootstrap, health, kubeconfig)
+    │   ├── variables.tf             # Variables du module (nodes, cluster)
+    │   ├── provider.tf              # Provider mappings pour le module
+    │   ├── output.tf                # Outputs du module (machine_config, kube_config…)
+    │   └── machines-config
+    │       ├── control-plane.yaml.tftpl  # Template Cloud-Init Talos pour les controlplanes
+    │       └── worker.yaml.tftpl         # Template Cloud-Init Talos pour les workers
+    └── output                       # Dossier généré après apply
+        ├── talos-config.yaml        # Config Talos client générée
+        ├── talos-machines-config-*.yaml  # Configs Talos pour chaque VM
+        └── kube-config.yaml         # Kubeconfig pour se connecter au cluster
+
 ```
 
-## Prérequis
+## 2. Prérequis
 
-- Terraform installé (version >= 1.5 recommandée)
-- Connexion au réseau interne de Polytech (via VPN ou réseau local)
-- Accès au cluster Proxmox Gryffondor
-- Un utilisateur `terraform-prov@pve` avec un **token API** généré
-- Ce token doit disposer d’un **rôle personnalisé** nommé `TerraformProv` avec les privilèges suivants :
+- Terraform ≥ 1.5  
+- Accès réseau au cluster Proxmox Gryffondor (VPN ou LAN)  
+- Un utilisateur Proxmox avec :  
+  - Token API  
+  - Rôle **TerraformProv** (privileges listés ci-dessous)  
 
 ```bash
-  pveum role add TerraformProv -privs \
-    "Datastore.Allocate Datastore.AllocateSpace Datastore.Audit \
-     Pool.Allocate Sys.Audit Sys.Console Sys.Modify \
-     VM.Allocate VM.Audit VM.Clone \
-     VM.Config.CDROM VM.Config.Cloudinit VM.Config.CPU VM.Config.Disk \
-     VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options \
-     VM.Console VM.Migrate VM.Monitor VM.PowerMgmt SDN.Use"
+pveum role add TerraformProv -privs \
+  "Datastore.Allocate Datastore.AllocateSpace Datastore.Audit \
+   Pool.Allocate Sys.Audit Sys.Console Sys.Modify \
+   VM.Allocate VM.Audit VM.Clone \
+   VM.Config.CDROM VM.Config.Cloudinit VM.Config.CPU VM.Config.Disk \
+   VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options \
+   VM.Console VM.Migrate VM.Monitor VM.PowerMgmt SDN.Use"
+
+pveum aclmod / -user root@pam -role TerraformProv
+
+pveum user token add root@pam terraform \
+  -expire 0 -privsep 0 -comment "Terraform token"
 ```
 
-Attribuer ensuite ce rôle à l’utilisateur et lui ajoute un token (jeton API)
+- Clé SSH  
+  Copiez votre clé publique dans `infrastructure/id_ed25519.pub`.  
+
+## 3. Variables sensibles
+
+Créez (hors Git) `infrastructure/proxmox.auto.tfvars` :
+
+```hcl
+proxmox = {
+  name         = "gryffondor"
+  cluster_name = "gryffondor"
+  endpoint     = "https://162.38.112.67:8006"
+  insecure     = true
+  username     = "root"
+  api_token    = "root@pam!A7gK_9z.x-F=token"
+}
+```
+
+## 4. Déploiement
 
 ```bash
-  pveum aclmod / -user terraform-prov@pve -role TerraformProv
-  pveum user token add terraform-prov@pve terraform -expire 0 -privsep 0 -comment "Terraform token"
+cd infrastructure
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519  # votre clé privée
+terraform init
+terraform plan   # Vérifier le plan
+terraform apply  # Déployer le cluster
 ```
 
-## Déploiement
+À l’issue, le dossier `infrastructure/output/` contiendra :
+- `talos-config.yaml`
+- `talos-machines-config-<nom-de-vm>.yaml` (pour chaque node)
+- `kube-config.yaml`
 
-Depuis le dossier contenant les fichiers Terraform :
+## 5. Description rapide des modules
+Module racine (main.tf)
 
-```bash
-  terraform init
-  terraform plan        # absolument vérifier le plan pour éviter toute erreur
-  terraform apply
-```
+Appelle le module ./Popoter
 
-Cela crée 4 machines virtuelles réparties sur les nœuds du cluster Gryffondor :
+Passe la liste des nœuds, la configuration Proxmox et les paramètres de cluster Talos.
 
-- k8s-master : node maître, déployé sur gryffondor-1
-- k8s-worker-1 : déployé sur gryffondor-2
-- k8s-worker-2 : déployé sur gryffondor-3
-- k8s-worker-3 : déployé sur gryffondor-1
+Module Popoter
 
-## Description technique
+image.tf : télécharge l’image Cloud-Init Talos pour chaque nœud.
 
-### Templates
+virtual-machines.tf : crée/clône les VMs via le provider bpg/proxmox.
 
-Chaque VM est clonée à partir d’un template Cloud-Init déjà présent sur les nœuds cibles Proxmox. Ces templates incluent :
+talos.tf : génère et applique les configs Talos, bootstrap le controlplane, vérifie la santé du cluster et génère le kubeconfig.
 
-- QEMU Guest Agent installé
-- Cloud-Init activé
-- Swap désactivé
-- Disque système de 32 Go
-- Utilisateur `pop` avec mot de passe défini via la variable `ci_pwd`
-- Une clé SSH injectée
+machines-config/ : templates pour controlplanes et workers (.tftpl).
 
-### Configuration des VMs
+output.tf : écrit les fichiers de config Talos et Kube dans infrastructure/output/.
 
-Chaque VM disposera de :
-
-- 2 vCPU
-- 4 Go de RAM
-- 32 Go de disque
-- Réseau virtuel configuré avec :
-  - bridge : `vmbr0`
-  - modèle : `virtio`
-- Configuration Cloud-Init incluant :
-  - Nom de machine (hostname)
-  - Une clé SSH publique (`ssh_public_key`)
-  - IP statique, DNS, passerelle
-
-### Attributions d’adresses IP
-
-Les adresses sont définies directement dans `main.tf`.
-
-- k8s-master : 162.38.112.159
-- k8s-worker-1 : 162.38.112.155
-- k8s-worker-2 : 162.38.112.226
-- k8s-worker-3 : 162.38.112.227
-
-## Gestion des secrets
-
-Les mots de passe et tokens doivent être définis via un fichier local non versionné (`terraform.tfvars`), ou via des variables d’environnement.
-
-Exemple `terraform.tfvars` (à ne pas pousser sur Git) :
-
-```bash
-  ci_pwd              = "votre_mot_de_passe"
-  pm_api_token_secret = "votre_token_secret"
-```
-
-Ou bien, dans votre terminal :
-
-```bash
-  export TF_VAR_ci_pwd="votre_mot_de_passe"
-  export TF_VAR_pm_api_token_secret="votre_token_secret"
-```
-
-## Exemple .gitignore recommandé
-
-```bash
-# Terraform state
-*.tfstate
-*.tfstate.backup
-
-# Sensitive tfvars files
-terraform.tfvars
-
-# Terraform dirs
-.terraform/
-.terraform.lock.hcl
-```
