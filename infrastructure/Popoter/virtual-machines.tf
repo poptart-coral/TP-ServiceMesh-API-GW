@@ -53,5 +53,9 @@ resource "proxmox_virtual_environment_vm" "this" {
         gateway = each.value.gateway
       }
     }
+    dns {
+      domain = ""
+      servers = ["8.8.8.8"]
+    }
   }
 }
