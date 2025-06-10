@@ -39,8 +39,23 @@ module "Popoter" {
       ram_dedicated = 8192
       machine_type  = "worker"
     }
-    // quand tout marchera (cluster qui marche etc, tout paramétré), déployer ensuite ces VMs là
-    // add poptart-worker-2 : ip address = 162.38.112.155 (mais VM de Giada à éteindre) vm_id = 11112002 sur gryffondor-3
-    // add poptart-worker-3 : ip address = 162.38.112.227 vm_id = 11112003 sur gryffondor-1
+    "poptart-worker-2" = {
+      host_node     = "gryffondor-3"
+      ip            = "162.38.112.155"
+      mac_address   = "BC:24:11:2E:C8:02"
+      vm_id         = 11112002
+      cpu           = 4
+      ram_dedicated = 8192
+      machine_type  = "worker"
+    }
+    "poptart-worker-3" = {
+      host_node     = "gryffondor-1"
+      ip            = "162.38.112.227"
+      mac_address   = "BC:24:11:2E:C8:03"
+      vm_id         = 11112003
+      cpu           = 4
+      ram_dedicated = 8192
+      machine_type  = "worker"
+    }
   }
 }

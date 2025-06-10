@@ -13,4 +13,6 @@ resource "proxmox_virtual_environment_download_file" "this" {
   lifecycle {
     prevent_destroy = true
   }
+
+  upload_timeout = 1200 // timeout for the upload operation in seconds
 }
