@@ -22,3 +22,11 @@ variable "cluster" {
     proxmox_cluster = optional(string, "gryffondor")
   })
 }
+
+variable "cilium" {
+  description = "Cilium configuration"
+  type = object({
+    values  = string
+    install = string
+  })
+}

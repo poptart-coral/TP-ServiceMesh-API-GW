@@ -11,6 +11,11 @@ module "Popoter" {
     talos_version = "v1.10.0"
   }
 
+  cilium = {
+    install = file("${path.module}/Popoter/inline-manifests/cilium-install.yaml")
+    values = file("${path.module}/Popoter/inline-manifests/cilium-values.yaml")
+  }
+
   nodes = {
     "poptart-controller-1" = {
       host_node     = "gryffondor-1"
