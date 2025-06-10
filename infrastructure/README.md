@@ -109,3 +109,9 @@ machines-config/ : templates pour controlplanes et workers (.tftpl).
 
 output.tf : écrit les fichiers de config Talos et Kube dans infrastructure/output/.
 
+## 6. Destroy
+
+Pour ne pas destroy les iamges Talos qui prennent du temps à se télécharger et finissent souvent en timeout, éviter de destroy toutes les ressources, seulement : 
+```bash
+terraform destroy   -target=module.Popoter.proxmox_virtual_environment_vm.this   -target=module.Popoter.talos_machine_bootstrap.this   -target=module.Popoter.talos_machine_configuration_apply.this
+```
