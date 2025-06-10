@@ -4,7 +4,9 @@ machine:
   nodeLabels:
     topology.kubernetes.io/region: ${cluster_name}
     topology.kubernetes.io/zone: ${node_name}
-
+  kubelet:
+    extraArgs:
+      rotate-server-certificates: true
 cluster:
   network:
     cni:
@@ -19,6 +21,8 @@ cluster:
   - https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.1.0/config/crd/standard/gateway.networking.k8s.io_referencegrants.yaml
   - https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.1.0/config/crd/standard/gateway.networking.k8s.io_grpcroutes.yaml
   - https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.1.0/config/crd/experimental/gateway.networking.k8s.io_tlsroutes.yaml
+  - https://raw.githubusercontent.com/alex1989hu/kubelet-serving-cert-approver/main/deploy/standalone-install.yaml
+  - https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
   inlineManifests:
   - name: cilium-values
     contents: |
