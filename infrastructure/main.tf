@@ -16,6 +16,10 @@ module "Popoter" {
     values = file("${path.module}/Popoter/inline-manifests/cilium-values.yaml")
   }
 
+  longhorn = {
+    install = file("${path.module}/Popoter/inline-manifests/longhorn-install.yaml")
+  }
+
   nodes = {
     "poptart-controller-1" = {
       host_node     = "gryffondor-1"
